@@ -1,0 +1,9 @@
+postgres:
+  image: akka-jdbc-postgres:latest
+  container_name: account_play_cqrs_postgres
+  environment:
+    - "TZ=Europe/Amsterdam"
+    - "POSTGRES_USER=docker"
+    - "POSTGRES_PASSWORD=docker"
+  ports:
+    - "5432:5432" 
