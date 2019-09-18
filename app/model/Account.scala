@@ -5,18 +5,19 @@
 package model
 
 import akka.actor.typed.ActorRef
-import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.ActorContext
 import akka.cluster.sharding.typed.scaladsl._
 import akka.persistence.typed.ExpectingReply
 import akka.persistence.typed.scaladsl.Effect
 import akka.persistence.typed.scaladsl.EventSourcedBehavior
 import akka.persistence.typed.scaladsl.ReplyEffect
 import play.scaladsl.cqrs.Tagger
-import akka.actor.typed.scaladsl.Behaviors
+import akka.persistence.typed.PersistenceId
 
 object Account {
 
-  val typeKey: EntityTypeKey[AccountCommand[_]] = EntityTypeKey[AccountCommand[_]]("Account")
+  val typeKey: EntityTypeKey[AccountCommand[_]] =
+    EntityTypeKey[AccountCommand[_]]("Account")
 
   private val accountTag = "account-event"
 
@@ -27,32 +28,30 @@ object Account {
 
   def empty: Account = Account(balance = 0)
 
-  def behavior(entityContext: EntityContext): Behavior[AccountCommand[_]] = {
-    Behaviors.setup { ctx =>
-      ctx.log.info(s"Account: ${entityContext.entityId} instatiated")
-
-      EventSourcedBehavior
-        .withEnforcedReplies[AccountCommand[_], AccountEvent, Account](
-          persistenceId = typeKey.persistenceIdFrom(entityContext.entityId), // AccountEntity|abc-def
-          emptyState = Account.empty,
-          commandHandler = (account, cmd) => {
-            ctx.log.info(s"Received command $cmd")
-            account.applyCommand(cmd)
-          },
-          eventHandler = (account, evt) => {
-            ctx.log.info(s"Applying event $evt")
-            account.applyEvent(evt)
-          }
-        )
-        .withTagger(tagger.tagFunction(entityContext.entityId))
-    }
+  def behavior(actorCtx: ActorContext[AccountCommand[_]],
+               persistenceId: PersistenceId)
+    : EventSourcedBehavior[AccountCommand[_], AccountEvent, Account] = {
+    EventSourcedBehavior
+      .withEnforcedReplies[AccountCommand[_], AccountEvent, Account](
+        persistenceId = persistenceId,
+        emptyState = Account.empty,
+        commandHandler = (account, cmd) => {
+          actorCtx.log.info(s"Received command $cmd")
+          account.applyCommand(cmd)
+        },
+        eventHandler = (account, evt) => {
+          actorCtx.log.info(s"Applying event $evt")
+          account.applyEvent(evt)
+        }
+      )
+      .withTagger(tagger.tagFunction(persistenceId.id))
   }
 
 }
 
 /**
- * The current state held by the persistent entity.
- */
+  * The current state held by the persistent entity.
+  */
 case class Account(balance: Double) {
 
   def applyCommand(cmd: AccountCommand[_]): ReplyEffect[AccountEvent, Account] =
@@ -95,16 +94,19 @@ case class Deposited(amount: Double) extends AccountEvent
 case class Withdrawn(amount: Double) extends AccountEvent
 
 sealed trait AccountReply
-sealed trait Confirmation           extends AccountReply
-case object Accepted                extends Confirmation
+sealed trait Confirmation extends AccountReply
+case object Accepted extends Confirmation
 case class Rejected(reason: String) extends Confirmation
 
 case class Balance(amount: Double) extends AccountReply
 
 sealed trait AccountCommand[R <: AccountReply] extends ExpectingReply[R]
 
-case class GetBalance(replyTo: ActorRef[Balance]) extends AccountCommand[Balance]
+case class GetBalance(replyTo: ActorRef[Balance])
+    extends AccountCommand[Balance]
 
-case class Deposit(amount: Double, replyTo: ActorRef[Confirmation]) extends AccountCommand[Confirmation]
+case class Deposit(amount: Double, replyTo: ActorRef[Confirmation])
+    extends AccountCommand[Confirmation]
 
-case class Withdraw(amount: Double, replyTo: ActorRef[Confirmation]) extends AccountCommand[Confirmation]
+case class Withdraw(amount: Double, replyTo: ActorRef[Confirmation])
+    extends AccountCommand[Confirmation]

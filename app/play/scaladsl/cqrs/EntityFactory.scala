@@ -5,6 +5,9 @@
 package play.scaladsl.cqrs
 
 import akka.actor.ActorSystem
+import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.ActorContext
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter._
 import akka.cluster.sharding.typed.scaladsl._
 import akka.persistence.typed.scaladsl.EventSourcedBehavior
@@ -12,11 +15,15 @@ import akka.persistence.typed.scaladsl.EventSourcedBehavior
 import scala.reflect.ClassTag
 import akka.annotation.ApiMayChange
 import akka.cluster.sharding.typed.ShardingEnvelope
+import akka.cluster.sharding.typed.scaladsl.EntityContext
+import akka.persistence.typed.PersistenceId
 
 @ApiMayChange
-final class EntityFactory[Command: ClassTag, Event, State](
+class EntityFactory[Command: ClassTag, Event, State](
     name: String,
-    behaviorFunc: EntityContext => EventSourcedBehavior[Command, Event, State],
+    behaviorFunc: (
+        ActorContext[Command],
+        PersistenceId) => EventSourcedBehavior[Command, Event, State],
     tagger: Tagger[Event],
     actorSystem: ActorSystem
 ) {
@@ -25,23 +32,42 @@ final class EntityFactory[Command: ClassTag, Event, State](
   private val typedActorSystem = actorSystem.toTyped
   private val clusterSharding = ClusterSharding(typedActorSystem)
 
-  val typeKey: EntityTypeKey[Command] = EntityTypeKey[Command](name)
+  private val typeKey: EntityTypeKey[Command] = EntityTypeKey[Command](name)
 
   final def entityRefFor(entityId: String): EntityRef[Command] = {
-    // TODO: this need to be removed once https://github.com/akka/akka/pull/27725 is merged
-    // this will generate persistence Id compatible with Lagom's Ids, eg: 'ModelName|entityId'
-    val persistenceId = typeKey.persistenceIdFrom(entityId)
-    clusterSharding.entityRefFor(typeKey, persistenceId.id)
+    // Whatever entityId the user provides is the eid used across the sharding
+    // scheme. The `typeKey` will take care of providing some namespacing to
+    // the `entityId`.
+    clusterSharding.entityRefFor(typeKey, entityId)
   }
 
-  def buildEntity(): Entity[Command, ShardingEnvelope[Command]] = {
+  private def asPersistenceId(eid: String): PersistenceId =
+    typeKey.persistenceIdFrom(eid)
+
+  private def buildEntity(): Entity[Command, ShardingEnvelope[Command]] = {
     Entity(
       typeKey,
-      ctx =>
-        behaviorFunc(ctx)
-          .withTagger(tagger.tagFunction(ctx.entityId))
+      entityContext =>
+        Behaviors.setup[Command] { actorContext =>
+          defaultSharder(actorContext, entityContext)
+      }
     )
   }
 
   clusterSharding.init(buildEntity())
+
+  // This is the glue code connecting sharding and persistence. But we still
+  // leave the door open to producing regular `Behavior` so users can override and wrap this.
+  protected def defaultSharder(
+      actorContext: ActorContext[Command],
+      entityContext: EntityContext): Behavior[Command] = {
+    val peid = asPersistenceId(entityContext.entityId)
+    behaviorFunc(actorContext, peid)
+      .withTagger(
+        tagger.tagFunction(peid.id)
+        // IMHO this is wrong and using the peid.id
+        // on tagging directly introduces a limitation
+      )
+  }
+
 }
