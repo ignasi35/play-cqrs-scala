@@ -1,9 +1,31 @@
-# play-scala-macwire-di-example
+# play-cqrs-scala
 
-This is an example project for setting up Play with Macwire compile time dependency injection.
+## Create docker image
 
-For further details, please see:
+This image creates the DB with the schema for journal and snapshot in place. Just use it!
 
-* <https://www.playframework.com/documentation/latest/ScalaCompileTimeDependencyInjection>
-* <https://github.com/adamw/macwire/blob/master/README.md>
-* <https://di-in-scala.github.io/>
+```
+cd docker
+docker build  -t akka-jdbc-postgres .
+cd ../
+```
+
+ ## Create container
+
+ User docker-compose.yml
+
+ ```
+ docker-compose up -d
+ ```
+
+## Start Play
+
+```sbt "~run"```
+
+ ## Calls
+
+Using httpie
+
+http POST localhost:9000/deposit/abc-def amount:=350
+http POST localhost:9000/withdraw/abc-def amount:=100
+http localhost:9000/balance/abc-def

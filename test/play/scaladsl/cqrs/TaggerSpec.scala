@@ -13,34 +13,48 @@ class TaggerSpec extends Specification {
 
     val persistenceId = "dummy-test-id"
 
-    "return a sharded tag" in {
+    "shard a tag when configured for sharding" in {
       val tagger      = Tagger[TestEvent].addTagGroup("TagA", 10)
       val shardedTags = tagger.tagFunction(persistenceId)(TestEventA)
       shardedTags must beEqualTo(Set("TagA9"))
     }
 
-    "return sharded tags starting from 0" in {
-      val tagger = Tagger[TestEvent].addTagGroup("TagA", 3)
-      val tags   = tagger.allShardedTags("TagA")
-      tags must haveSize(3)
-      tags must_== Set("TagA0", "TagA1", "TagA2")
+    "return all sharded tags for specific tag groups" in {
+
+      val tagger =
+        Tagger[TestEvent]
+          .addTagGroup("TagA", 3)
+          .addTagGroup("TagB", 4)
+
+      val tagsForA = tagger.allShardedTags("TagA")
+      tagsForA must haveSize(3)
+      tagsForA must_== Set("TagA0", "TagA1", "TagA2")
+
+      val tagsForB = tagger.allShardedTags("TagB")
+      tagsForB must haveSize(4)
+      tagsForB must_== Set("TagB0", "TagB1", "TagB2", "TagB3")
+
     }
 
-    "return a non-sharded tag when no shard number is provided" in {
+    "NOT shard tag when no shard number is provided" in {
       val tagger         = Tagger[TestEvent].addTagGroup("TagA")
       val allShardedTags = tagger.tagFunction(persistenceId)(TestEventA)
       allShardedTags must beEqualTo(Set("TagA"))
     }
 
-    "return set of sharded tags when declaring different tag groups" in {
-      val taggers = Tagger[TestEventA.type].addTagGroup("TagA", 10).addTagGroup("TagB", 6).addTagGroup("TagC")
+    "apply tags according to each defined tag group" in {
+      val taggers =
+        Tagger[TestEventA]
+          .addTagGroup("TagA", 10)
+          .addTagGroup("TagB", 6)
+          .addTagGroup("TagC")
 
       val tags = taggers.tagFunction(persistenceId)(TestEventA)
       tags must haveSize(3)
       tags must_== Set("TagA9", "TagB3", "TagC")
     }
 
-    "hounour each tag group predicate" in {
+    "honour each tag group predicate" in {
 
       val predicateForA: TestEvent => Boolean = {
         case TestEventA => true
@@ -52,9 +66,10 @@ class TaggerSpec extends Specification {
         case _          => false
       }
 
-      val taggers = Tagger[TestEvent]
-        .addTagGroup("TagA", 10, predicateForA) // only tag TestEventA
-        .addTagGroup("TagB", 6, predicateForB)  // only tag TestEventB
+      val taggers =
+        Tagger[TestEvent]
+          .addTagGroup("TagA", 10, predicateForA) // only tag TestEventA
+          .addTagGroup("TagB", 6, predicateForB)  // only tag TestEventB
 
       val tagsForA = taggers.tagFunction(persistenceId)(TestEventA)
       tagsForA must haveSize(1)
@@ -74,41 +89,12 @@ class TaggerSpec extends Specification {
       Tagger[TestEvent].addTagGroup("  ") must throwA[IllegalArgumentException]
     }
 
-    "return a sharded tag (with custom tag group)" in {
-      val tagger      = Tagger[TestEvent].addTagGroup(customTagGroup)
-      val shardedTags = tagger.tagFunction(persistenceId)(TestEventA)
-      shardedTags must beEqualTo(Set("MyTag-0"))
-
-    }
-
-    "'allShardedTags' hounour custom tagger format" in {
-      val tagger         = Tagger[TestEvent].addTagGroup(customTagGroup)
-      val allShardedTags = tagger.allShardedTags(customTagGroup.originalTag)
-      allShardedTags must beEqualTo(Set("MyTag-0", "MyTag-1", "MyTag-2"))
-    }
   }
 
   sealed trait TestEvent
-  case object TestEventA extends TestEvent
-  case object TestEventB extends TestEvent
+  sealed trait TestEventA extends TestEvent
+  case object TestEventA  extends TestEventA
+  sealed trait TestEventB extends TestEvent
+  case object TestEventB  extends TestEventB
 
-  val customTagGroup = new TagGroup[TestEvent] {
-    val numOfShards: Int                = 3
-    val originalTag: String             = "MyTag"
-    val predicate: TestEvent => Boolean = _ => true
-
-    final def shardTag(shardNum: Int): String =
-      if (numOfShards > 1) s"$originalTag-$shardNum"
-      else originalTag
-
-    final def tagFunction(persistenceId: String): TestEvent => Option[String] =
-      evt => {
-        if (predicate(evt)) {
-          val tag =
-            if (numOfShards > 1) shardTag(Math.abs(persistenceId.hashCode % numOfShards))
-            else originalTag
-          Some(tag)
-        } else None
-      }
-  }
 }

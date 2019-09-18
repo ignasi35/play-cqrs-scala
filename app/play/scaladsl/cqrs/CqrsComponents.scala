@@ -5,33 +5,29 @@
 package play.scaladsl.cqrs
 import akka.actor.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
+import akka.cluster.sharding.typed.scaladsl.Entity
+import akka.cluster.sharding.typed.scaladsl._
 import akka.actor.typed.scaladsl.adapter._
+import akka.cluster.sharding.typed.ShardingEnvelope
 import akka.cluster.typed.Cluster
 import akka.cluster.typed.Join
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.scaladsl.Effect
 import akka.persistence.typed.scaladsl.EventSourcedBehavior
 import akka.persistence.typed.scaladsl.ReplyEffect
-import akka.cluster.sharding.typed.scaladsl._
 import scala.reflect.ClassTag
+import akka.annotation.ApiMayChange
 
-trait CqrsComponents extends ClusterShardingComponents {
+@ApiMayChange
+trait CqrsComponents {
 
-  def clusterSharding: ClusterSharding
+  def actorSystem: ActorSystem
 
-  final def newEntityFactory[Command: ClassTag, Event, State](
+  final def createEntityFactory[Command: ClassTag, Event, State](
       name: String,
       behaviorFunc: EntityContext => EventSourcedBehavior[Command, Event, State],
-      tagger: Tagger[Event] = new Tagger[Event]()
-  ): CqrsEntityFactory[Command, Event, State] = {
-
-    new CqrsEntityFactory[Command, Event, State](
-      name = name,
-      typeKey = EntityTypeKey[Command](name).withEntityIdSeparator("-"),
-      behaviorFunc = behaviorFunc,
-      tagger = tagger,
-      clusterSharding
-    )
-  }
+      tagger: Tagger[Event]
+  ): EntityFactory[Command, Event, State] =
+    new EntityFactory(name, behaviorFunc, tagger, actorSystem)
 
 }

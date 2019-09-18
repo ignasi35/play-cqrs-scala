@@ -11,16 +11,22 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import play.api.libs.json.JsSuccess
 import play.api.libs.json.JsError
+import akka.cluster.sharding.typed.scaladsl.ClusterSharding
+import akka.cluster.sharding.typed.scaladsl.EntityRef
 
 class AccountController(
     cc: ControllerComponents,
-    accountFactory: CqrsEntityFactory[AccountCommand[_], AccountEvent, Account]
+    clusterSharding: ClusterSharding
 ) extends AbstractController(cc) {
 
   implicit val timeout = Timeout(3.seconds)
 
+  private def accountRef(accountNum: String): EntityRef[AccountCommand[_]] =
+    clusterSharding.entityRefFor(Account.typeKey, accountNum)
+
   def balance(accountNum: String) = Action.async {
-    val res = accountFactory.entityRefFor(accountNum) ? GetBalance
+
+    val res = accountRef(accountNum) ? GetBalance
     res.map {
       case Balance(amount) => Ok("current balance = " + amount)
     }
@@ -28,7 +34,7 @@ class AccountController(
 
   def deposit(accountNum: String) = Action.async(parse.json) { req =>
     def run(value: Double) = {
-      val res = accountFactory.entityRefFor(accountNum).ask(replyTo => Deposit(value, replyTo))
+      val res = accountRef(accountNum).ask(replyTo => Deposit(value, replyTo))
       res.map {
         case model.Accepted   => Ok("deposited successful")
         case Rejected(reason) => BadRequest(s"deposited rejected: $reason")
@@ -44,7 +50,7 @@ class AccountController(
 
   def withdraw(accountNum: String) = Action.async(parse.json) { req =>
     def run(value: Double) = {
-      val res = accountFactory.entityRefFor(accountNum).ask(replyTo => Withdraw(value, replyTo))
+      val res = accountRef(accountNum).ask(replyTo => Withdraw(value, replyTo))
       res.map {
         case model.Accepted   => Ok("withdraw successful")
         case Rejected(reason) => BadRequest(s"withdraw rejected: $reason")

@@ -16,6 +16,44 @@ import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.scaladsl.Effect
 import akka.persistence.typed.scaladsl.EventSourcedBehavior
 import akka.persistence.typed.scaladsl.ReplyEffect
+import play.scaladsl.cqrs.Tagger
+import akka.actor.typed.scaladsl.Behaviors
+
+object Account {
+
+  val typeKey: EntityTypeKey[AccountCommand[_]] = EntityTypeKey[AccountCommand[_]]("Account")
+
+  private val accountTag = "account-event"
+
+  // tagger being a val on a object can be accessed later to start projections
+  val tagger =
+    Tagger[AccountEvent]
+      .addTagGroup(accountTag, numOfShards = 10)
+
+  def empty: Account = Account(balance = 0)
+
+  def behavior(entityContext: EntityContext): Behavior[AccountCommand[_]] = {
+    Behaviors.setup { ctx =>
+      ctx.log.info(s"Account: ${entityContext.entityId} instatiated")
+
+      EventSourcedBehavior
+        .withEnforcedReplies[AccountCommand[_], AccountEvent, Account](
+          persistenceId = typeKey.persistenceIdFrom(entityContext.entityId), // AccountEntity|abc-def
+          emptyState = Account.empty,
+          commandHandler = (account, cmd) => {
+            ctx.log.info(s"Received command $cmd")
+            account.applyCommand(cmd)
+          },
+          eventHandler = (account, evt) => {
+            ctx.log.info(s"Applying event $evt")
+            account.applyEvent(evt)
+          }
+        )
+        .withTagger(tagger.tagFunction(entityContext.entityId))
+    }
+  }
+
+}
 
 /**
  * The current state held by the persistent entity.
@@ -55,20 +93,6 @@ case class Account(balance: Double) {
     }
   }
 
-}
-
-object Account {
-
-  def empty: Account = Account(balance = 0)
-
-  def behavior(entityContext: EntityContext) =
-    EventSourcedBehavior
-      .withEnforcedReplies[AccountCommand[_], AccountEvent, Account](
-        persistenceId = PersistenceId(entityContext.entityId),
-        emptyState = Account.empty,
-        commandHandler = (account, cmd) => account.applyCommand(cmd),
-        eventHandler = (account, evt) => account.applyEvent(evt)
-      )
 }
 
 sealed trait AccountEvent
