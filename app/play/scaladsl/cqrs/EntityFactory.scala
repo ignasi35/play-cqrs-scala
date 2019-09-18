@@ -4,26 +4,17 @@
 
 package play.scaladsl.cqrs
 
-import akka.Done
 import akka.actor.ActorSystem
-import akka.actor.typed.ActorRef
-import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.adapter._
 import akka.cluster.sharding.typed.scaladsl._
-import akka.persistence.journal.Tagged
-import akka.persistence.typed.ExpectingReply
-import akka.persistence.typed.PersistenceId
-import akka.persistence.typed.scaladsl.Effect
 import akka.persistence.typed.scaladsl.EventSourcedBehavior
-import akka.persistence.typed.scaladsl.ReplyEffect
+
 import scala.reflect.ClassTag
 import akka.annotation.ApiMayChange
 import akka.cluster.sharding.typed.ShardingEnvelope
-import akka.cluster.sharding.typed.ClusterShardingSettings
-import scala.concurrent.duration._
 
 @ApiMayChange
-class EntityFactory[Command: ClassTag, Event, State](
+final class EntityFactory[Command: ClassTag, Event, State](
     name: String,
     behaviorFunc: EntityContext => EventSourcedBehavior[Command, Event, State],
     tagger: Tagger[Event],
@@ -32,7 +23,7 @@ class EntityFactory[Command: ClassTag, Event, State](
 
   // Play has an injectable (untyped) ActorySystem. We can just use it.
   private val typedActorSystem = actorSystem.toTyped
-  private val clusterSharding  = ClusterSharding(typedActorSystem)
+  private val clusterSharding = ClusterSharding(typedActorSystem)
 
   val typeKey: EntityTypeKey[Command] = EntityTypeKey[Command](name)
 
