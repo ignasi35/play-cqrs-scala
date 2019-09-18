@@ -26,6 +26,6 @@ cd ../
 
 Using httpie
 
-http POST localhost:9000/deposit/abc-def amount:=350
-http POST localhost:9000/withdraw/abc-def amount:=100
-http localhost:9000/balance/abc-def
+http POST localhost:9000/deposit/abc-def amount:=350  
+http POST localhost:9000/withdraw/abc-def amount:=100  
+http localhost:9000/balance/abc-def  
